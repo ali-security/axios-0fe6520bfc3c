@@ -2054,6 +2054,30 @@ describe('supports http with nodejs', function () {
   });
 
   describe('Data URL', function () {
+    it('should allow a percent-encoded data: URL within decoded maxContentLength', async function () {
+      // fromDataURI() in this version only accepts a bare `data:,` (or
+      // `;`-separated) media type, so omit `text/plain` here.
+      const {data} = await axios.get('data:,%E2%82%AC', {
+        maxContentLength: 4,
+        responseType: 'text'
+      });
+
+      assert.strictEqual(data, '\u20ac');
+    });
+
+    it('should still reject a percent-encoded data: URL beyond decoded maxContentLength', async function () {
+      await assert.rejects(
+        axios.get('data:,' + '%41'.repeat(8), {
+          maxContentLength: 4
+        }),
+        (err) => {
+          assert.strictEqual(err.code, AxiosError.ERR_BAD_RESPONSE);
+          assert.strictEqual(err.message, 'maxContentLength size of 4 exceeded');
+          return true;
+        }
+      );
+    });
+
     it('should support requesting data URL as a Buffer', function (done) {
       const buffer = Buffer.from('123');
 
