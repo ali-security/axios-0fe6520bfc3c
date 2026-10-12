@@ -199,6 +199,56 @@ describe('supports http with nodejs', function () {
     });
   });
 
+  it('should sanitize request headers containing CRLF characters', async function () {
+    server = await startHTTPServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          xTest: req.headers['x-test'],
+          injected: Object.prototype.hasOwnProperty.call(req.headers, 'injected') ? req.headers.injected : null
+        })
+      );
+    });
+
+    const {data} = await axios.get(`http://localhost:${server.address().port}/`, {
+      headers: {
+        'x-test': '\tok\r\nInjected: yes '
+      }
+    });
+
+    assert.strictEqual(data.xTest, 'okInjected: yes');
+    assert.strictEqual(data.injected, null);
+  });
+
+  it('should not inject CRLF header content set after config merging', async function () {
+    server = await startHTTPServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({rawHeaders: req.rawHeaders, url: req.url}));
+    });
+
+    const instance = axios.create();
+
+    instance.interceptors.request.use((config) => {
+      config.headers['x-amz-target'] = 'dummy\r\n\r\nPUT /latest/api/token HTTP/1.1\r\nHost: 169.254.169.254\r\nX-aws-ec2-metadata-token-ttl-seconds: 21600';
+      return config;
+    });
+
+    const {data} = await instance.get(`http://localhost:${server.address().port}/`);
+
+    const rawHeaders = data.rawHeaders;
+    const names = rawHeaders.filter((v, i) => i % 2 === 0).map((name) => name.toLowerCase());
+    const targetIndex = names.indexOf('x-amz-target');
+
+    assert.strictEqual(data.url, '/');
+    assert.notStrictEqual(targetIndex, -1);
+    assert.strictEqual(
+      rawHeaders[targetIndex * 2 + 1],
+      'dummyPUT /latest/api/token HTTP/1.1Host: 169.254.169.254X-aws-ec2-metadata-token-ttl-seconds: 21600'
+    );
+    assert.strictEqual(names.indexOf('x-aws-ec2-metadata-token-ttl-seconds'), -1);
+    assert.strictEqual(names.filter((name) => name === 'host').length, 1);
+  });
+
   it('should throw an error if the timeout property is not parsable as a number', function (done) {
 
     server = http.createServer(function (req, res) {

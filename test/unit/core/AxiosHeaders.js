@@ -74,6 +74,41 @@ describe('AxiosHeaders', function () {
 
       assert.strictEqual(headers.get('foo'), 'value2');
     })
+
+    it('should sanitize invalid characters in header value', function () {
+      const headers = new AxiosHeaders();
+
+      headers.set('x-test', '\t safe\r\nInjected: true \u0000');
+
+      assert.strictEqual(headers.get('x-test'), 'safeInjected: true');
+    });
+
+    it('should sanitize invalid characters in any array header value', function () {
+      const headers = new AxiosHeaders();
+
+      headers.set('set-cookie', ['safe=1', ' \tunsafe=1\nInjected: true\r\n ']);
+
+      assert.deepStrictEqual(headers.get('set-cookie'), ['safe=1', 'unsafe=1Injected: true']);
+    });
+
+    it('should sanitize CRLF in header values passed to the constructor', function () {
+      const headers = new AxiosHeaders({
+        'x-amz-target': 'dummy\r\n\r\nPUT /latest/api/token HTTP/1.1\r\nHost: 169.254.169.254'
+      });
+
+      assert.strictEqual(headers.get('x-amz-target'), 'dummyPUT /latest/api/token HTTP/1.1Host: 169.254.169.254');
+    });
+
+    it('should sanitize header values assigned directly as properties on normalize', function () {
+      const headers = new AxiosHeaders();
+
+      headers['x-test'] = 'ok\r\nInjected: yes';
+
+      headers.normalize();
+
+      assert.strictEqual(headers.get('x-test'), 'okInjected: yes');
+      assert.strictEqual(headers.has('injected'), false);
+    });
   });
 
   it('should support uppercase name mapping for names overlapped by class methods', () => {
